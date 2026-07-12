@@ -12,43 +12,43 @@ from indicators import last
 # ── Council roster ────────────────────────────────────────────────────────────
 MEMBERS = [
     {
-        "name": "Elena Voss",
+        "name": "The Machine",
         "role": "Heiken Ashi Analyst",
         "style": "Trend Structure",
         "weight": 2.0,
     },
     {
-        "name": "Marcus Chen",
+        "name": "The Macro King",
         "role": "ADX Trend Expert",
         "style": "Trend Strength & Direction",
         "weight": 2.0,
     },
     {
-        "name": "Sofia Patel",
+        "name": "The Level Hunter",
         "role": "Momentum Specialist",
         "style": "RSI & Rate of Change",
         "weight": 1.5,
     },
     {
-        "name": "James O'Brien",
+        "name": "The Architect",
         "role": "Oscillator Expert",
         "style": "CCI & Williams %R",
         "weight": 1.5,
     },
     {
-        "name": "Yuki Tanaka",
+        "name": "The Statistician",
         "role": "Volatility Guardian",
         "style": "ATR Risk Management",
         "weight": 1.0,
     },
     {
-        "name": "Amara Osei",
+        "name": "The Options Whisperer",
         "role": "Currency Strength",
         "style": "Cross-pair Flow Analysis",
         "weight": 2.5,
     },
     {
-        "name": "Dr. Alan Rix",
+        "name": "The Risk Officer",
         "role": "ML Oracle",
         "style": "Lorentzian k-NN",
         "weight": 2.5,

@@ -38,7 +38,7 @@ externalPort = 80
 
     [agent]
     stack = "PNPM_WORKSPACE"
-    expertMode = true
+expertMode = true
 
     [postMerge]
     path = "scripts/post-merge.sh"
