@@ -22,20 +22,38 @@ TIMEFRAME_MAP = {
 }
 
 
-def _parse_response(response_json, symbol):
+def _parse_response(response_json, symbol, interval="?"):
     """Parse a Twelve Data time_series response into a DataFrame."""
     if "values" not in response_json:
         code = response_json.get("code", "?")
-        msg = response_json.get("message", "Unknown error")
+        msg  = response_json.get("message", "Unknown error")
+        print(
+            f"[API ERROR] {symbol} {interval}: code={code} msg={msg} "
+            f"full_response={response_json}",
+            flush=True,
+        )
         st.warning(f"API error for {symbol}: [{code}] {msg}")
         return None
 
-    df = pd.DataFrame(response_json["values"])
+    rows = response_json["values"]
+    print(
+        f"[API OK] {symbol} {interval}: {len(rows)} bars returned | "
+        f"newest={rows[0].get('datetime','?')} oldest={rows[-1].get('datetime','?')} | "
+        f"sample close={rows[0].get('close','?')}",
+        flush=True,
+    )
+
+    df = pd.DataFrame(rows)
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime").reset_index(drop=True)
     for col in ["open", "high", "low", "close"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df.dropna(subset=["open", "high", "low", "close"]).reset_index(drop=True)
+    df = df.dropna(subset=["open", "high", "low", "close"]).reset_index(drop=True)
+    print(
+        f"[PARSE]  {symbol} {interval}: {len(df)} clean rows after dropna",
+        flush=True,
+    )
+    return df
 
 
 def fetch_ohlcv(symbol: str, interval: str, outputsize: int = 150, api_key: str = "") -> pd.DataFrame | None:
@@ -49,11 +67,13 @@ def fetch_ohlcv(symbol: str, interval: str, outputsize: int = 150, api_key: str 
         "apikey": api_key,
         "format": "JSON",
     }
+    print(f"[FETCH]  Requesting {symbol} {interval} outputsize={outputsize}", flush=True)
     try:
         r = requests.get(f"{BASE_URL}/time_series", params=params, timeout=15)
         r.raise_for_status()
-        return _parse_response(r.json(), symbol)
+        return _parse_response(r.json(), symbol, interval)
     except requests.RequestException as exc:
+        print(f"[NET ERR] {symbol} {interval}: {exc}", flush=True)
         st.warning(f"Network error fetching {symbol} ({interval}): {exc}")
         return None
 

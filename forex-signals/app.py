@@ -278,9 +278,56 @@ with tab_signal:
     ha_cols = st.columns(4)
     for col, tf in zip(ha_cols, ["Daily", "H4", "H1", "M5"]):
         df = tf_data.get(tf)
-        bull = ind.last(df, "ha_bullish", default=None) if df is not None else None
-        icon = "🟢 Bullish" if bull is True else ("🔴 Bearish" if bull is False else "⚪ N/A")
-        col.metric(tf, icon)
+        bull = None
+        rows = 0
+        if df is not None:
+            rows = len(df)
+            # Use pre-computed ha_bullish (from enrich); fall back to
+            # computing HA on-the-fly so we always show a direction even
+            # when the full indicator suite couldn't run.
+            bull = ind.last(df, "ha_bullish", default=None)
+            if bull is None and rows >= 2:
+                ha_df = ind.heiken_ashi(df)
+                bull = ind.last(ha_df, "ha_bullish", default=None)
+        if bull is True:
+            icon, delta = "🟢 Bullish", f"{rows} bars"
+        elif bull is False:
+            icon, delta = "🔴 Bearish", f"{rows} bars"
+        else:
+            icon, delta = "⚪ N/A", f"{'0' if df is None else rows} bars"
+        col.metric(tf, icon, delta)
+
+    # ── Data debug expander ──────────────────────────────────────────────────
+    with st.expander("🔬 Data Debug — raw fetch summary", expanded=False):
+        st.caption(
+            "Check here if any timeframe shows N/A. "
+            "Console logs (workflow stdout) have the full API response."
+        )
+        debug_rows = []
+        for tf in ["Daily", "H4", "H1", "M5"]:
+            df = tf_data.get(tf)
+            if df is None:
+                debug_rows.append({
+                    "TF": tf, "Rows": 0, "ha_bullish col": "missing",
+                    "Last ha_bullish": "—", "Last close": "—",
+                    "First datetime": "—", "Last datetime": "—",
+                })
+            else:
+                ha_col = "yes" if "ha_bullish" in df.columns else "no (HA fallback)"
+                bull_v = ind.last(df, "ha_bullish", default=None)
+                if bull_v is None and len(df) >= 2:
+                    ha_df = ind.heiken_ashi(df)
+                    bull_v = ind.last(ha_df, "ha_bullish", default=None)
+                debug_rows.append({
+                    "TF": tf,
+                    "Rows": len(df),
+                    "ha_bullish col": ha_col,
+                    "Last ha_bullish": ("True" if bull_v is True else ("False" if bull_v is False else "None")),
+                    "Last close": f"{ind.last(df, 'close'):.5f}",
+                    "First datetime": str(df["datetime"].iloc[0])[:16],
+                    "Last datetime":  str(df["datetime"].iloc[-1])[:16],
+                })
+        st.dataframe(debug_rows, use_container_width=True)
 
     # Save to journal button
     st.divider()

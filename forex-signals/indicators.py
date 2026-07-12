@@ -126,11 +126,29 @@ def swing_levels(df: pd.DataFrame, window: int = 10, n_levels: int = 3) -> dict:
 # ─── Composite enrichment ────────────────────────────────────────────────────
 
 def enrich(df: pd.DataFrame) -> pd.DataFrame:
-    """Add all indicator columns to df in-place and return it."""
-    if df is None or len(df) < 30:
+    """
+    Add all indicator columns to df and return it.
+
+    Heiken Ashi requires only 2 bars and is always computed when possible.
+    Momentum / volatility indicators (RSI, ADX, etc.) need ≥30 bars and are
+    skipped when the DataFrame is too short — but ha_bullish is still present.
+    """
+    if df is None or len(df) < 2:
         return df
 
+    # ── Heiken Ashi (2+ bars) ─────────────────────────────────────────────
     df = heiken_ashi(df)
+
+    if len(df) < 30:
+        # Return with HA columns only; skip indicators that need more history
+        print(
+            f"[ENRICH] Only {len(df)} bars — HA computed, "
+            f"momentum indicators skipped (need ≥30 bars).",
+            flush=True,
+        )
+        return df
+
+    # ── Full indicator suite (30+ bars) ───────────────────────────────────
     df["rsi"] = rsi(df["close"])
     df["wr"] = williams_r(df["high"], df["low"], df["close"])
     df["adx"], df["plus_di"], df["minus_di"] = adx(df["high"], df["low"], df["close"])
