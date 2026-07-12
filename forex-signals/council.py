@@ -21,7 +21,7 @@ MEMBERS = [
         "name": "The Macro King",
         "role": "ADX Trend Expert",
         "style": "Trend Strength & Direction",
-        "weight": 2.0,
+        "weight": 1.5,
     },
     {
         "name": "The Level Hunter",
@@ -33,7 +33,7 @@ MEMBERS = [
         "name": "The Architect",
         "role": "Oscillator Expert",
         "style": "CCI & Williams %R",
-        "weight": 1.5,
+        "weight": 1.0,
     },
     {
         "name": "The Statistician",
@@ -45,13 +45,13 @@ MEMBERS = [
         "name": "The Options Whisperer",
         "role": "Currency Strength",
         "style": "Cross-pair Flow Analysis",
-        "weight": 2.5,
+        "weight": 1.0,
     },
     {
         "name": "The Risk Officer",
         "role": "ML Oracle",
         "style": "Lorentzian k-NN",
-        "weight": 2.5,
+        "weight": 1.0,
     },
 ]
 
@@ -322,27 +322,38 @@ def run_council(
         elif sig == -1:
             sell_score += w
 
+    # ── Risk Officer veto ─────────────────────────────────────────────────────
+    # The Risk Officer (last member) holds unconditional veto power independent
+    # of weight score. A HOLD vote from The Risk Officer forces NO TRADE,
+    # overriding the waterfall result and all weighted tallies.
+    risk_officer_vote    = member_votes[-1]   # always index 6
+    risk_officer_vetoed  = risk_officer_vote["vote"] == "HOLD"
+
     # ── Final signal ──────────────────────────────────────────────────────────
     if not wf_ok:
-        signal = "NO TRADE"
+        signal    = "NO TRADE"
+        direction = 0
+    elif risk_officer_vetoed:
+        signal    = "NO TRADE"
         direction = 0
     elif buy_score >= BUY_THRESHOLD and buy_score > sell_score:
-        signal = "BUY"
+        signal    = "BUY"
         direction = 1
     elif sell_score >= SELL_THRESHOLD and sell_score > buy_score:
-        signal = "SELL"
+        signal    = "SELL"
         direction = -1
     else:
-        signal = "NO TRADE"
+        signal    = "NO TRADE"
         direction = 0
 
     return {
-        "signal":        signal,
-        "direction":     direction,
-        "buy_score":     round(buy_score, 2),
-        "sell_score":    round(sell_score, 2),
-        "total_weight":  TOTAL_WEIGHT,
-        "waterfall_ok":  wf_ok,
-        "waterfall_msg": wf_msg,
-        "member_votes":  member_votes,
+        "signal":              signal,
+        "direction":           direction,
+        "buy_score":           round(buy_score, 2),
+        "sell_score":          round(sell_score, 2),
+        "total_weight":        TOTAL_WEIGHT,
+        "waterfall_ok":        wf_ok,
+        "waterfall_msg":       wf_msg,
+        "member_votes":        member_votes,
+        "risk_officer_vetoed": risk_officer_vetoed,
     }
