@@ -1,8 +1,8 @@
 modules = ["nodejs-24", "python-base-3.13"]
 
-    [[ports]]
-    localPort = 8080
-    externalPort = 80
+[[ports]]
+localPort = 8000
+externalPort = 80
 
     [deployment]
     router = "application"
@@ -31,7 +31,7 @@ modules = ["nodejs-24", "python-base-3.13"]
     [[workflows.workflow.tasks]]
     task = "shell.exec"
     args = "cd forex-signals && streamlit run app.py"
-    waitForPort = 8080
+    waitForPort = 8000
 
     [workflows.workflow.metadata]
     outputType = "webview"
