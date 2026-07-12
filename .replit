@@ -1,45 +1,50 @@
 modules = ["nodejs-24", "python-base-3.13"]
 
-[deployment]
-router = "application"
-deploymentTarget = "autoscale"
+    [[ports]]
+    localPort = 8080
+    externalPort = 80
 
-[deployment.postBuild]
-args = ["pnpm", "store", "prune"]
-env = { "CI" = "true" }
+    [deployment]
+    router = "application"
+    deploymentTarget = "autoscale"
 
-[workflows]
-runButton = "Project"
+    [deployment.postBuild]
+    args = ["pnpm", "store", "prune"]
+    env = { "CI" = "true" }
 
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
+    [workflows]
+    runButton = "Project"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "GBP/AUD Signal App"
+    [[workflows.workflow]]
+    name = "Project"
+    mode = "parallel"
+    author = "agent"
 
-[[workflows.workflow]]
-name = "GBP/AUD Signal App"
-author = "agent"
+    [[workflows.workflow.tasks]]
+    task = "workflow.run"
+    args = "GBP/AUD Signal App"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd forex-signals && streamlit run app.py"
-waitForPort = 8080
+    [[workflows.workflow]]
+    name = "GBP/AUD Signal App"
+    author = "agent"
 
-[workflows.workflow.metadata]
-outputType = "webview"
+    [[workflows.workflow.tasks]]
+    task = "shell.exec"
+    args = "cd forex-signals && streamlit run app.py"
+    waitForPort = 8080
 
-[agent]
-stack = "PNPM_WORKSPACE"
-expertMode = true
+    [workflows.workflow.metadata]
+    outputType = "webview"
 
-[postMerge]
-path = "scripts/post-merge.sh"
-timeoutMs = 20000
+    [agent]
+    stack = "PNPM_WORKSPACE"
+    expertMode = true
 
-[nix]
-channel = "stable-25_05"
-packages = ["glibcLocales"]
+    [postMerge]
+    path = "scripts/post-merge.sh"
+    timeoutMs = 20000
+
+    [nix]
+    channel = "stable-25_05"
+    packages = ["glibcLocales"]
+    
