@@ -247,6 +247,18 @@ with tab_signal:
     else:
         st.error(council["waterfall_msg"])
 
+    # Risk Officer veto callout (Signal tab)
+    if council.get("risk_officer_vetoed", False):
+        st.markdown(
+            "<div style='background:#3d0000;border:1px solid #ff1744;border-radius:8px;"
+            "padding:10px 14px;margin-top:8px;color:#ff8a80;font-size:13px'>"
+            "🛑 <strong style='color:#ff1744'>Risk Officer Veto active</strong> — "
+            "The Risk Officer returned NEUTRAL. Signal overridden to NO TRADE. "
+            "See the Council tab for the full transcript."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
     # Council score bar
     st.divider()
     st.markdown("**Council Weighted Score**")
@@ -435,6 +447,36 @@ with tab_council:
         "Each casts a weighted vote. A directional signal requires >55% weighted consensus."
     )
 
+    # ── Risk Officer veto banner ───────────────────────────────────────────────
+    risk_vetoed = council.get("risk_officer_vetoed", False)
+    if risk_vetoed:
+        st.markdown(
+            """
+            <div style="
+                background: linear-gradient(135deg, #3d0000 0%, #1a0000 100%);
+                border: 2px solid #ff1744;
+                border-radius: 10px;
+                padding: 16px 20px;
+                margin-bottom: 16px;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+            ">
+                <span style="font-size: 36px;">🛑</span>
+                <div>
+                    <div style="color: #ff1744; font-size: 18px; font-weight: 700; letter-spacing: 1px;">
+                        RISK OFFICER VETO — SIGNAL BLOCKED
+                    </div>
+                    <div style="color: #ff8a80; font-size: 13px; margin-top: 4px;">
+                        The Risk Officer returned NEUTRAL. This unconditional veto overrides all
+                        other votes and the waterfall gate. Output is forced to NO TRADE.
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     # Weighted vote donut chart
     buy_w   = council["buy_score"]
     sell_w  = council["sell_score"]
@@ -465,17 +507,36 @@ with tab_council:
 
     # Member cards
     for mv in council["member_votes"]:
-        vote_icon = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⚪"}[mv["vote"]]
-        vote_colour = {"BUY": "#0d2b12", "SELL": "#2b0d0d", "HOLD": "#1e1e1e"}[mv["vote"]]
+        vote_icon   = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⚪"}[mv["vote"]]
+        is_risk_officer = mv["name"] == "The Risk Officer"
+        is_veto = is_risk_officer and risk_vetoed
+
         with st.container():
             col_left, col_right = st.columns([3, 1])
             with col_left:
-                st.markdown(f"**{mv['name']}** · *{mv['role']}*")
+                name_label = f"**{mv['name']}** · *{mv['role']}*"
+                if is_veto:
+                    st.markdown(
+                        f"<span style='color:#ff1744;font-weight:700'>{mv['name']}</span>"
+                        f" · <em>{mv['role']}</em>"
+                        f" &nbsp;<span style='background:#ff1744;color:#fff;"
+                        f"font-size:10px;font-weight:700;padding:2px 7px;"
+                        f"border-radius:4px;letter-spacing:0.5px'>VETO</span>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(name_label)
                 st.caption(mv["reason"])
             with col_right:
+                veto_line = (
+                    "<div style='text-align:right;color:#ff1744;font-size:11px;"
+                    "font-weight:700;letter-spacing:0.5px'>🛑 SIGNAL BLOCKED</div>"
+                    if is_veto else ""
+                )
                 st.markdown(
                     f"<div style='text-align:right;font-size:22px'>{vote_icon} {mv['vote']}</div>"
-                    f"<div style='text-align:right;color:#888;font-size:12px'>weight {mv['weight']:.1f}</div>",
+                    f"<div style='text-align:right;color:#888;font-size:12px'>weight {mv['weight']:.1f}</div>"
+                    f"{veto_line}",
                     unsafe_allow_html=True,
                 )
         st.divider()
