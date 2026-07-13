@@ -1,0 +1,2 @@
+- [GBP/AUD rate-limit fix](gbpaud-rate-limit.md) — free tier is 8 req/min; batch strength pairs into 1 HTTP call; sleep 8s between GBP/AUD TF fetches.
+- [GBP/AUD app architecture](gbpaud-arch.md) — Streamlit on port 8000, plain Python dir (not a Node artifact), 5-tab layout, 7-member council with Risk Officer veto.

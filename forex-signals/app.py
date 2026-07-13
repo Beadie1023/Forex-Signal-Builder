@@ -66,6 +66,10 @@ if "analysis" not in st.session_state:
     st.session_state.analysis = None
 if "last_run" not in st.session_state:
     st.session_state.last_run = None
+# Track which refresh count we last acted on so the auto-refresh block only
+# fires when the timer actually increments the counter — not on every rerun.
+if "last_refresh_seen" not in st.session_state:
+    st.session_state.last_refresh_seen = 0
 
 # ─── Helper: run full analysis ────────────────────────────────────────────────
 
@@ -78,7 +82,17 @@ def run_analysis(api_key: str):
         results["tf_raw"] = tf_raw
 
         st.write("📊 Computing technical indicators…")
-        tf_data = {tf: ind.enrich(df) for tf, df in tf_raw.items()}
+        # Guard: enrich() requires a non-None DataFrame; skip missing timeframes.
+        tf_data = {}
+        missing_tfs = []
+        for tf, df in tf_raw.items():
+            if df is not None and len(df) > 0:
+                tf_data[tf] = ind.enrich(df)
+            else:
+                tf_data[tf] = None
+                missing_tfs.append(tf)
+        if missing_tfs:
+            print(f"[WARN] Missing timeframes (API error or rate limit): {missing_tfs}", flush=True)
         results["tf_data"] = tf_data
 
         st.write("🌐 Fetching cross-pair data for currency strength…")
@@ -137,17 +151,37 @@ def run_analysis(api_key: str):
 
 
 # ─── Trigger analysis ─────────────────────────────────────────────────────────
-if run_btn or (refresh_count > 0 and st.session_state.analysis is None):
+# Determine whether this rerun should launch a new analysis.
+# Rules:
+#   1. User clicked "Analyse Now"  → always run
+#   2. Auto-refresh counter incremented AND a previous result exists → run once
+#      (refresh_count is sticky — it stays > 0 on every non-timer rerun, so
+#       we compare against the last count we acted on to avoid re-running on
+#       every tab switch / slider move after the first 5-min tick)
+_autorefresh_fired = (
+    refresh_count > st.session_state.last_refresh_seen
+    and st.session_state.analysis is not None
+    and api_key
+)
+_first_run_on_refresh = (
+    refresh_count > 0
+    and st.session_state.analysis is None
+    and api_key
+)
+
+if run_btn or _first_run_on_refresh or _autorefresh_fired:
     if not api_key:
         st.warning("Please enter your Twelve Data API key in the sidebar to run analysis.")
     else:
-        st.session_state.analysis = run_analysis(api_key)
-        st.session_state.last_run = datetime.utcnow()
-
-# Auto-refresh trigger (after first run)
-if refresh_count > 0 and st.session_state.analysis is not None and api_key:
-    st.session_state.analysis = run_analysis(api_key)
-    st.session_state.last_run = datetime.utcnow()
+        try:
+            st.session_state.analysis  = run_analysis(api_key)
+            st.session_state.last_run  = datetime.utcnow()
+            st.session_state.last_refresh_seen = refresh_count
+        except Exception as _exc:
+            import traceback as _tb
+            print(f"[ANALYSIS CRASH] {_exc}", flush=True)
+            _tb.print_exc()
+            st.error(f"Analysis failed — see console for traceback. Error: {_exc}")
 
 analysis = st.session_state.analysis
 
