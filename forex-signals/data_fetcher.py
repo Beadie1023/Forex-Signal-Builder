@@ -181,9 +181,12 @@ def fetch_strength_data(api_key: str) -> dict[str, pd.DataFrame | None]:
     """
     Fetch H1 data for all 12 GBP/AUD cross-pairs in ONE batch HTTP request.
     Uses 12 credits but counts as only 1 request against the rate limit.
+    We sleep longer here (15 s) to ensure the rolling 1-min window has cleared
+    after the 4 GBP/AUD timeframe fetches.
     """
-    print(f"[RATE] Sleeping {RATE_SLEEP}s before strength batch request…", flush=True)
-    time.sleep(RATE_SLEEP)
+    _pre_batch_sleep = 15.0
+    print(f"[RATE] Sleeping {_pre_batch_sleep}s before strength batch request…", flush=True)
+    time.sleep(_pre_batch_sleep)
     return fetch_batch(ALL_STRENGTH_PAIRS, interval="1h", outputsize=30, api_key=api_key)
 
 

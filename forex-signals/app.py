@@ -5,7 +5,7 @@ Powered by Twelve Data API · Streamlit · Lorentzian k-NN · 7-Member Council
 
 import math
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -168,7 +168,7 @@ if run_btn or _autorefresh_fired:
     else:
         try:
             st.session_state.analysis = run_analysis(api_key)
-            st.session_state.last_run = datetime.now(datetime.UTC)
+            st.session_state.last_run = datetime.now(timezone.utc)
         except Exception as _exc:
             import traceback as _tb
             print(f"[ANALYSIS CRASH] {_exc}", flush=True)
