@@ -77,82 +77,85 @@ def _autorefresh_heartbeat():
 
 _autorefresh_heartbeat()
 
-# ─── Helper: run full analysis ────────────────────────────────────────────────
+# ─── Helper: run full analysis (pure Python — NO st.* calls) ─────────────────
+# Keeping this function free of any Streamlit calls is critical: st.status()
+# holds a WebSocket channel open, and time.sleep() inside it starves the
+# Streamlit event loop, causing the script runner to time out and kill the run.
 
-def run_analysis(api_key: str):
+def run_analysis(key: str, knn_k_: int, knn_lookback_: int,
+                 atr_sl_mult_: float, tp1_rr_: float, tp2_rr_: float) -> dict:
     results = {}
 
-    with st.status("Fetching data from Twelve Data…", expanded=True) as status:
-        st.write("📥 Downloading GBP/AUD on 4 timeframes…")
-        tf_raw = fetch_all_timeframes(api_key)
-        results["tf_raw"] = tf_raw
+    # ── 1. Fetch OHLCV (includes rate-limit sleeps) ───────────────────────────
+    tf_raw = fetch_all_timeframes(key)
+    results["tf_raw"] = tf_raw
 
-        st.write("📊 Computing technical indicators…")
-        # Guard: enrich() requires a non-None DataFrame; skip missing timeframes.
-        tf_data = {}
-        missing_tfs = []
-        for tf, df in tf_raw.items():
-            if df is not None and len(df) > 0:
-                tf_data[tf] = ind.enrich(df)
-            else:
-                tf_data[tf] = None
-                missing_tfs.append(tf)
-        if missing_tfs:
-            print(f"[WARN] Missing timeframes (API error or rate limit): {missing_tfs}", flush=True)
-        results["tf_data"] = tf_data
-
-        st.write("🌐 Fetching cross-pair data for currency strength…")
-        pair_data = fetch_strength_data(api_key)
-        strength = calculate_currency_strength(pair_data)
-        results["strength"] = strength
-        results["pair_data"] = pair_data
-
-        st.write("🤖 Running Lorentzian k-NN classifier…")
-        df_h1 = tf_data.get("H1")
-        knn_sig, knn_conf, knn_nbrs = (0, 0.0, []) if df_h1 is None else lor.lorentzian_knn(
-            df_h1, k=knn_k, lookback=knn_lookback
-        )
-        results["knn"] = {"signal": knn_sig, "confidence": knn_conf, "neighbours": knn_nbrs}
-
-        st.write("🏛️ Running 7-member council debate…")
-        gbp_s = strength.get("GBP", 0.0)
-        aud_s = strength.get("AUD", 0.0)
-        council = run_council(tf_data, gbp_s, aud_s, knn_sig, knn_conf)
-        results["council"] = council
-
-        # ── Entry / SL / TP ──────────────────────────────────────────────────
-        df_m5 = tf_data.get("M5")
-        entry = ind.last(df_m5, "close", default=float("nan"))
-        atr_v = ind.last(df_m5, "atr", default=float("nan"))
-        direction = council["direction"]
-
-        if not math.isnan(entry) and not math.isnan(atr_v) and direction != 0:
-            sl_dist = atr_v * atr_sl_mult
-            stop_loss = entry - sl_dist * direction
-            tp1 = entry + sl_dist * tp1_rr * direction
-            tp2 = entry + sl_dist * tp2_rr * direction
+    # ── 2. Indicators ─────────────────────────────────────────────────────────
+    tf_data = {}
+    missing_tfs = []
+    for tf, df in tf_raw.items():
+        if df is not None and len(df) > 0:
+            tf_data[tf] = ind.enrich(df)
         else:
-            stop_loss = tp1 = tp2 = float("nan")
+            tf_data[tf] = None
+            missing_tfs.append(tf)
+    if missing_tfs:
+        print(f"[WARN] Missing timeframes: {missing_tfs}", flush=True)
+    results["tf_data"] = tf_data
 
-        results["entry"]      = entry
-        results["stop_loss"]  = stop_loss
-        results["tp1"]        = tp1
-        results["tp2"]        = tp2
+    # ── 3. Currency strength ──────────────────────────────────────────────────
+    pair_data = fetch_strength_data(key)
+    strength  = calculate_currency_strength(pair_data)
+    results["strength"]  = strength
+    results["pair_data"] = pair_data
 
-        # ── Support & Resistance ─────────────────────────────────────────────
-        df_daily = tf_data.get("Daily")
-        pivots = {}
-        swings = {"resistances": [], "supports": []}
-        if df_daily is not None and len(df_daily) >= 2:
-            prev = df_daily.iloc[-2]
-            pivots = ind.pivot_points(prev["high"], prev["low"], prev["close"])
-            swings = ind.swing_levels(df_daily, window=5, n_levels=3)
-        results["pivots"] = pivots
-        results["swings"] = swings
+    # ── 4. Lorentzian k-NN ────────────────────────────────────────────────────
+    df_h1 = tf_data.get("H1")
+    if df_h1 is not None:
+        knn_sig, knn_conf, knn_nbrs = lor.lorentzian_knn(
+            df_h1, k=knn_k_, lookback=knn_lookback_
+        )
+    else:
+        knn_sig, knn_conf, knn_nbrs = 0, 0.0, []
+    results["knn"] = {"signal": knn_sig, "confidence": knn_conf, "neighbours": knn_nbrs}
 
-        status.update(label="✅ Analysis complete!", state="complete", expanded=False)
+    # ── 5. Council ────────────────────────────────────────────────────────────
+    gbp_s  = strength.get("GBP", 0.0)
+    aud_s  = strength.get("AUD", 0.0)
+    council = run_council(tf_data, gbp_s, aud_s, knn_sig, knn_conf)
+    results["council"] = council
 
-    results["timestamp"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    # ── 6. Entry / SL / TP ───────────────────────────────────────────────────
+    df_m5     = tf_data.get("M5")
+    entry     = ind.last(df_m5, "close", default=float("nan"))
+    atr_v     = ind.last(df_m5, "atr",   default=float("nan"))
+    direction = council["direction"]
+
+    if not math.isnan(entry) and not math.isnan(atr_v) and direction != 0:
+        sl_dist   = atr_v * atr_sl_mult_
+        stop_loss = entry - sl_dist * direction
+        tp1       = entry + sl_dist * tp1_rr_ * direction
+        tp2       = entry + sl_dist * tp2_rr_ * direction
+    else:
+        stop_loss = tp1 = tp2 = float("nan")
+
+    results["entry"]     = entry
+    results["stop_loss"] = stop_loss
+    results["tp1"]       = tp1
+    results["tp2"]       = tp2
+
+    # ── 7. Support & Resistance ───────────────────────────────────────────────
+    df_daily = tf_data.get("Daily")
+    pivots   = {}
+    swings   = {"resistances": [], "supports": []}
+    if df_daily is not None and len(df_daily) >= 2:
+        prev   = df_daily.iloc[-2]
+        pivots = ind.pivot_points(prev["high"], prev["low"], prev["close"])
+        swings = ind.swing_levels(df_daily, window=5, n_levels=3)
+    results["pivots"] = pivots
+    results["swings"] = swings
+
+    results["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     return results
 
 
@@ -166,14 +169,18 @@ if run_btn or _autorefresh_fired:
     if not api_key:
         st.warning("Please enter your Twelve Data API key in the sidebar to run analysis.")
     else:
-        try:
-            st.session_state.analysis = run_analysis(api_key)
-            st.session_state.last_run = datetime.now(timezone.utc)
-        except Exception as _exc:
-            import traceback as _tb
-            print(f"[ANALYSIS CRASH] {_exc}", flush=True)
-            _tb.print_exc()
-            st.error(f"Analysis failed — see console for traceback. Error: {_exc}")
+        with st.spinner("⏳ Fetching data & running analysis (~55 s) …"):
+            try:
+                st.session_state.analysis = run_analysis(
+                    api_key, knn_k, knn_lookback,
+                    atr_sl_mult, tp1_rr, tp2_rr,
+                )
+                st.session_state.last_run = datetime.now(timezone.utc)
+            except Exception as _exc:
+                import traceback as _tb
+                print(f"[ANALYSIS CRASH] {_exc}", flush=True)
+                _tb.print_exc()
+                st.error(f"Analysis failed: {_exc}")
 
 analysis = st.session_state.analysis
 
