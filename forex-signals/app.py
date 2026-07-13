@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 import indicators as ind
 import lorentzian as lor
@@ -32,9 +31,6 @@ st.set_page_config(
 )
 
 tj.init_db()
-
-# ─── Auto-refresh (5 minutes) ─────────────────────────────────────────────────
-refresh_count = st_autorefresh(interval=300_000, limit=None, key="autorefresh")
 
 # ─── Sidebar ─────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -59,17 +55,27 @@ with st.sidebar:
 
     st.divider()
     run_btn = st.button("🔄 Analyse Now", use_container_width=True, type="primary")
-    st.caption(f"Auto-refreshes every 5 min · Cycle #{refresh_count}")
+    st.caption("Auto-refreshes every 5 min")
 
 # ─── Session state ────────────────────────────────────────────────────────────
 if "analysis" not in st.session_state:
     st.session_state.analysis = None
 if "last_run" not in st.session_state:
     st.session_state.last_run = None
-# Track which refresh count we last acted on so the auto-refresh block only
-# fires when the timer actually increments the counter — not on every rerun.
-if "last_refresh_seen" not in st.session_state:
-    st.session_state.last_refresh_seen = 0
+if "_autorefresh_pending" not in st.session_state:
+    st.session_state._autorefresh_pending = False
+
+# ─── Native auto-refresh (no custom component) ───────────────────────────────
+# st.fragment with run_every re-runs only this fragment every 5 minutes.
+# It sets a flag and calls st.rerun() so the main script picks it up.
+@st.fragment(run_every=300)
+def _autorefresh_heartbeat():
+    # Silently set the pending flag; main script will consume it below.
+    if st.session_state.analysis is not None and api_key:
+        st.session_state._autorefresh_pending = True
+        st.rerun()
+
+_autorefresh_heartbeat()
 
 # ─── Helper: run full analysis ────────────────────────────────────────────────
 
@@ -151,32 +157,18 @@ def run_analysis(api_key: str):
 
 
 # ─── Trigger analysis ─────────────────────────────────────────────────────────
-# Determine whether this rerun should launch a new analysis.
-# Rules:
-#   1. User clicked "Analyse Now"  → always run
-#   2. Auto-refresh counter incremented AND a previous result exists → run once
-#      (refresh_count is sticky — it stays > 0 on every non-timer rerun, so
-#       we compare against the last count we acted on to avoid re-running on
-#       every tab switch / slider move after the first 5-min tick)
-_autorefresh_fired = (
-    refresh_count > st.session_state.last_refresh_seen
-    and st.session_state.analysis is not None
-    and api_key
-)
-_first_run_on_refresh = (
-    refresh_count > 0
-    and st.session_state.analysis is None
-    and api_key
-)
+# Consume the auto-refresh flag (set by _autorefresh_heartbeat fragment).
+_autorefresh_fired = st.session_state._autorefresh_pending
+if _autorefresh_fired:
+    st.session_state._autorefresh_pending = False
 
-if run_btn or _first_run_on_refresh or _autorefresh_fired:
+if run_btn or _autorefresh_fired:
     if not api_key:
         st.warning("Please enter your Twelve Data API key in the sidebar to run analysis.")
     else:
         try:
-            st.session_state.analysis  = run_analysis(api_key)
-            st.session_state.last_run  = datetime.utcnow()
-            st.session_state.last_refresh_seen = refresh_count
+            st.session_state.analysis = run_analysis(api_key)
+            st.session_state.last_run = datetime.now(datetime.UTC)
         except Exception as _exc:
             import traceback as _tb
             print(f"[ANALYSIS CRASH] {_exc}", flush=True)
