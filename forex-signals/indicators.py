@@ -159,8 +159,21 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def last(df: pd.DataFrame, col: str, default=float("nan")):
-    """Safe last-value accessor."""
+    """
+    Safe last-value accessor.
+
+    FIX: pandas returns numpy scalar types (e.g. numpy.bool_, numpy.float64)
+    from .iloc[-1], not native Python types. Code elsewhere (app.py's HA
+    panel) checks results with `is True` / `is False`, which is an identity
+    check — and `numpy.bool_(True) is True` is False even though the values
+    are equal. That mismatch was the root cause of every timeframe showing
+    "N/A" in the Heiken Ashi panel despite valid, correctly-computed data.
+    Converting numpy scalars to native Python types here fixes it for every
+    caller of last(), not just ha_bullish.
+    """
     if df is None or col not in df.columns or df[col].empty:
         return default
     v = df[col].iloc[-1]
-    return default if pd.isna(v) else v
+    if pd.isna(v):
+        return default
+    return v.item() if hasattr(v, "item") else v
