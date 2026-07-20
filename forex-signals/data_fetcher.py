@@ -5,9 +5,11 @@ Fetches GBP/AUD OHLCV on 4 timeframes + pair data for currency strength.
 Rate limits (free tier): 8 credits/minute, 800 credits/day.
 Each symbol per request = 1 credit.  We stay safe by:
   • Fetching the 4 GBP/AUD timeframes one-by-one with RATE_SLEEP between each.
-  • Fetching all 12 strength pairs in ONE batch request (comma-separated
-    symbols) — 12 credits, but only 1 HTTP request against the rate limit.
-Total HTTP requests per analysis run: 5  (4 timeframes + 1 strength batch).
+  • Fetching the 12 strength pairs in TWO batches of 6 symbols each (6 credits
+    per batch) — splitting keeps every single request under the 8-credit/minute
+    cap. A single 12-symbol batch would cost 12 credits in one shot, which is
+    already over the limit before counting anything else fetched that minute.
+Total HTTP requests per analysis run: 6  (4 timeframes + 2 strength batches).
 """
 
 import time
@@ -16,7 +18,7 @@ import pandas as pd
 
 BASE_URL = "https://api.twelvedata.com"
 
-# Twelve Data free tier: 8 requests/minute → need ≥7.5 s between requests.
+# Twelve Data free tier: 8 credits/minute → need ≥7.5 s between 1-credit requests.
 # We use 8 s for safety.
 RATE_SLEEP = 8.0
 
@@ -122,6 +124,9 @@ def fetch_batch(symbols: list[str], interval: str, outputsize: int, api_key: str
     """
     Fetch multiple symbols in one HTTP request using Twelve Data's batch endpoint.
     Costs 1 credit per symbol but only 1 HTTP request against the rate limit.
+    Keep len(symbols) small enough that len(symbols) credits stays under the
+    per-minute cap for whatever plan you're on (free tier: 8/minute) — callers
+    are responsible for batching and spacing correctly (see fetch_strength_data).
     Returns dict keyed by symbol (e.g. "GBP/USD").
     """
     if not api_key or not symbols:
@@ -179,15 +184,29 @@ def fetch_all_timeframes(api_key: str) -> dict[str, pd.DataFrame | None]:
 
 def fetch_strength_data(api_key: str) -> dict[str, pd.DataFrame | None]:
     """
-    Fetch H1 data for all 12 GBP/AUD cross-pairs in ONE batch HTTP request.
-    Uses 12 credits but counts as only 1 request against the rate limit.
-    We sleep longer here (15 s) to ensure the rolling 1-min window has cleared
-    after the 4 GBP/AUD timeframe fetches.
+    Fetch H1 data for all 12 GBP/AUD cross-pairs.
+
+    FIX: previously sent all 12 symbols in ONE batch request, which costs
+    12 credits in a single call — already over the free-tier 8-credits/minute
+    cap on its own, before counting the 4 GBP/AUD timeframe fetches that just
+    ran. That could 429 the batch call outright, and depending on how the
+    per-minute window resets, could also throttle the *next* run's timeframe
+    fetches if triggered again within a minute or two.
+
+    Now split into two 6-symbol batches (6 credits each), with spacing so the
+    two batches — and the 4-credit timeframe fetch that preceded them — don't
+    stack past the cap inside the same rolling 60s window.
     """
     _pre_batch_sleep = 15.0
-    print(f"[RATE] Sleeping {_pre_batch_sleep}s before strength batch request…", flush=True)
+    print(f"[RATE] Sleeping {_pre_batch_sleep}s before strength batch 1/2 (GBP pairs)…", flush=True)
     time.sleep(_pre_batch_sleep)
-    return fetch_batch(ALL_STRENGTH_PAIRS, interval="1h", outputsize=30, api_key=api_key)
+    gbp_results = fetch_batch(GBP_PAIRS, interval="1h", outputsize=30, api_key=api_key)
+
+    print(f"[RATE] Sleeping {RATE_SLEEP}s before strength batch 2/2 (AUD pairs)…", flush=True)
+    time.sleep(RATE_SLEEP)
+    aud_results = fetch_batch(AUD_PAIRS, interval="1h", outputsize=30, api_key=api_key)
+
+    return {**gbp_results, **aud_results}
 
 
 def calculate_currency_strength(pair_data: dict) -> dict[str, float]:
